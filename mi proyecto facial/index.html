@@ -2,158 +2,36 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Pulso Go! Face Server</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pulso Go! - Registro</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <script defer src="script.js"></script>
     <style>
-        /* Estilos simplificados para mayor rendimiento en AppCreator24 */
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: sans-serif; }
-        body { background: #0a0f1c; color: white; padding: 15px; }
-        .card { background: #1a1f32; border-radius: 15px; padding: 20px; margin-bottom: 20px; border: 1px solid #4299e150; }
-        .camera-wrapper { position: relative; width: 100%; aspect-ratio: 4/3; background: #000; border-radius: 10px; overflow: hidden; }
-        video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
-        canvas { transform: scaleX(-1); }
-        video { transform: scaleX(-1); }
-        input { width: 100%; padding: 10px; margin: 10px 0; border-radius: 8px; border: none; background: #2d3748; color: white; }
-        .btn { width: 100%; padding: 12px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; margin-top: 10px; }
-        .btn-primary { background: #3182ce; color: white; }
-        .btn-success { background: #38a169; color: white; }
-        #status { font-size: 0.8rem; color: #a0aec0; margin-top: 10px; text-align: center; }
+        body { margin: 0; background-color: #121621; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; }
+        .container { position: relative; width: 90%; max-width: 400px; margin-top: 20px; border-radius: 15px; overflow: hidden; border: 2px solid #2a2f3b; }
+        video { width: 100%; display: block; }
+        canvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+        .controls { width: 90%; max-width: 400px; padding: 20px; }
+        input { width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 5px; border: none; background: #2a2f3b; color: white; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; border: none; border-radius: 5px; color: white; font-weight: bold; cursor: pointer; margin-bottom: 10px; }
+        .btn-blue { background-color: #3498db; }
+        #status { font-size: 14px; text-align: center; margin-top: 10px; color: #aaa; }
     </style>
 </head>
 <body>
 
-    <div class="card">
-        <h3><i class="fas fa-user-plus"></i> Registro de Personal</h3>
+    <div class="controls">
+        <h3 style="margin-top:0;">Registro de Personal</h3>
         <input type="text" id="personName" placeholder="Nombre completo">
-        <input type="text" id="personRole" placeholder="Cargo (Ej: Supervisor)">
-        <button id="saveDataBtn" class="btn btn-primary">1. Guardar Datos Locales</button>
-        <button id="captureFaceBtn" class="btn btn-success" disabled>2. Capturar y Enviar a Nube</button>
-        <div id="regStatus">Listo para registro</div>
+        <input type="text" id="personRole" placeholder="Cargo (ej: CCTV)">
+        <button class="btn-blue" onclick="enviarANube()">Guardar Registro</button>
+        <div id="status">Esperando cámara...</div>
     </div>
 
-    <div class="card">
-        <div class="camera-wrapper">
-            <video id="video" autoplay playsinline muted></video>
-            <canvas id="overlay"></canvas>
-        </div>
-        <div id="status"><i class="fas fa-sync fa-spin"></i> Iniciando IA...</div>
+    <div class="container">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
     </div>
 
-    <script>
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw-7eZ3IvjY_I6X_3cPpaD1j05muWh74uFNjHO2tM6HDObtw5gVX-FIzB9SWnjkH--F/exec";
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('overlay');
-        let faceMatcher = null;
-        let tempPerson = null;
-
-        // Iniciar modelos y cámara
-        async function init() {
-            const status = document.getElementById('status');
-            try {
-                // Cargamos modelos desde tu carpeta en GitHub
-                await faceapi.nets.tinyFaceDetector.loadFromUri('models');
-                await faceapi.nets.faceLandmark68Net.loadFromUri('models');
-                await faceapi.nets.faceRecognitionNet.loadFromUri('models');
-                
-                status.innerHTML = "Modelos cargados. Iniciando cámara...";
-                
-                const stream = await navigator.mediaDevices.getUserMedia({ video: {} });
-                video.srcObject = stream;
-
-                // Descargar rostros de la nube
-                await downloadFromCloud();
-                
-                startRecognitionLoop();
-            } catch (err) {
-                status.innerHTML = "Error: " + err;
-            }
-        }
-
-        // Descargar rostros de Google Sheets
-        async function downloadFromCloud() {
-            try {
-                const response = await fetch(SCRIPT_URL);
-                const data = await response.json();
-                
-                if (data.length > 0) {
-                    const labeledDescriptors = data.map(p => {
-                        const desc = new Float32Array(JSON.parse(p.faceDescriptor));
-                        return new faceapi.LabeledFaceDescriptors(p.name, [desc]);
-                    });
-                    faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
-                    document.getElementById('status').innerHTML = "Base de datos sincronizada (" + data.length + " rostros)";
-                }
-            } catch (e) {
-                console.error("Error descargando datos", e);
-            }
-        }
-
-        // Bucle de reconocimiento
-        function startRecognitionLoop() {
-            setInterval(async () => {
-                const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
-                    .withFaceLandmarks()
-                    .withFaceDescriptors();
-                
-                const displaySize = { width: video.clientWidth, height: video.clientHeight };
-                faceapi.matchDimensions(canvas, displaySize);
-                const resizedDetections = faceapi.resizeResults(detections, displaySize);
-                
-                canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-                
-                if (faceMatcher && resizedDetections.length > 0) {
-                    resizedDetections.forEach(detection => {
-                        const result = faceMatcher.findBestMatch(detection.descriptor);
-                        const label = result.toString();
-                        const drawBox = new faceapi.draw.DrawBox(detection.detection.box, { label });
-                        drawBox.draw(canvas);
-                    });
-                }
-            }, 500);
-        }
-
-        // Botón: Guardar datos previos
-        document.getElementById('saveDataBtn').onclick = () => {
-            const name = document.getElementById('personName').value;
-            const role = document.getElementById('personRole').value;
-            if(!name) return alert("Pon un nombre");
-            
-            tempPerson = { name, role, id: Date.now() };
-            document.getElementById('captureFaceBtn').disabled = false;
-            document.getElementById('regStatus').innerHTML = "Mire a la cámara y presione Capturar";
-        };
-
-        // Botón: Capturar y subir a Google
-        document.getElementById('captureFaceBtn').onclick = async () => {
-            const status = document.getElementById('regStatus');
-            status.innerHTML = "Analizando rostro...";
-            
-            const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-                .withFaceLandmarks()
-                .withFaceDescriptor();
-
-            if (detection) {
-                status.innerHTML = "Subiendo al servidor...";
-                const payload = {
-                    ...tempPerson,
-                    faceDescriptor: JSON.stringify(Array.from(detection.descriptor))
-                };
-
-                await fetch(SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify(payload)
-                });
-
-                status.innerHTML = "✅ ¡Registrado en la nube!";
-                await downloadFromCloud(); // Recargar para reconocer de inmediato
-            } else {
-                status.innerHTML = "❌ No se detectó rostro";
-            }
-        };
-
-        init();
-    </script>
 </body>
 </html>
